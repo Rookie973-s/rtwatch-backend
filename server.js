@@ -19,6 +19,31 @@ mongoose.connect(MONGO, { useNewUrlParser: true, useUnifiedTopology: true })
   .catch(err=> console.error('❌ MongoDB Error:', err));
 
 // Middleware for checking token
+// Normalise + de-duplicate a watchlist (same TMDB title, or same name for old items)
+const toDate = v => { const d = v ? new Date(v) : null; return d && !isNaN(d) ? d : undefined; };
+function cleanList(list) {
+  const map = new Map();
+  for (const raw of Array.isArray(list) ? list : []) {
+    const name = String(raw?.name || '').trim().slice(0, 200);
+    if (!name) continue;
+    const mediaType = ['movie', 'tv'].includes(raw.mediaType) ? raw.mediaType : '';
+    const tmdbId = Number(raw.tmdbId) || 0;
+    const key = tmdbId ? `${mediaType}:${tmdbId}` : `n:${name.toLowerCase()}`;
+    const prev = map.get(key);
+    if (prev) {
+      prev.watched = prev.watched || !!raw.watched;
+      if (!prev.addedAt) prev.addedAt = toDate(raw.addedAt);
+    } else {
+      map.set(key, {
+        name, watched: !!raw.watched, poster: String(raw.poster || ''),
+        tmdbId, mediaType, year: String(raw.year || '').slice(0, 4),
+        addedAt: toDate(raw.addedAt)
+      });
+    }
+  }
+  return [...map.values()];
+}
+
 const auth = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -50,17 +75,20 @@ app.post('/api/login', async (req, res) => {
   res.json({ token, username: user.username });
 });
 
-// 📥 Get Watchlist
+// 📥 Get Watchlist (also heals duplicates already stored in the database)
 app.get('/api/watchlist', auth, async (req, res) => {
-  res.json({ watchlist: req.user.watchlist || [] });
+  const cleaned = cleanList(req.user.watchlist);
+  if (cleaned.length !== (req.user.watchlist || []).length) {
+    await User.updateOne({ _id: req.user._id }, { $set: { watchlist: cleaned } });
+  }
+  res.json({ watchlist: cleaned });
 });
 
-// 💾 Save Watchlist
+// 💾 Save Watchlist (atomic $set — no parallel save() version conflicts)
 app.post('/api/watchlist', auth, async (req, res) => {
-  req.user.watchlist = req.body.watchlist || [];
-  await req.user.save();
-  res.json({ success: true });
+  const cleaned = cleanList(req.body.watchlist);
+  await User.updateOne({ _id: req.user._id }, { $set: { watchlist: cleaned } });
+  res.json({ success: true, watchlist: cleaned });
 });
 
-app.listen(PORT, () => console.log('🚀Server running on port ${PORT}')
-);
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
