@@ -14,7 +14,8 @@ const WatchItem = new mongoose.Schema({
 const UserSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   password: { type: String, required: true },
-  watchlist: { type: [WatchItem], default: [] }
+  watchlist: { type: [WatchItem], default: [] },
+  watchlistBackup: { type: [WatchItem], default: [] }   // last list before any big shrink
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', UserSchema);
