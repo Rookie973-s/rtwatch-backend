@@ -2,9 +2,13 @@
 const mongoose = require('mongoose');
 
 const WatchItem = new mongoose.Schema({
-  name: String,
-  watched: { type: Boolean, default: false },
-  poster: { type: String, default: '' }
+  name:      { type: String, required: true },
+  watched:   { type: Boolean, default: false },
+  poster:    { type: String, default: '' },
+  tmdbId:    { type: Number, default: 0 },
+  mediaType: { type: String, enum: ['movie', 'tv', ''], default: '' },
+  year:      { type: String, default: '' },
+  addedAt:   { type: Date }          // when the user added it (was never stored before)
 }, { _id: false });
 
 const UserSchema = new mongoose.Schema({
