@@ -62,7 +62,9 @@ app.post('/api/login', async (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
   let user = await User.findOne({ username });
+  let created = false;
   if (!user) {
+    created = true;
     const hash = await bcrypt.hash(password, 10);
     user = new User({ username, password: hash });
     await user.save();
@@ -72,22 +74,26 @@ app.post('/api/login', async (req, res) => {
   }
 
   const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, username: user.username });
+  res.json({ token, username: user.username, created });
 });
 
-// 📥 Get Watchlist (also heals duplicates already stored in the database)
+// 📥 Get Watchlist (read-only: it never modifies the database)
 app.get('/api/watchlist', auth, async (req, res) => {
-  const cleaned = cleanList(req.user.watchlist);
-  if (cleaned.length !== (req.user.watchlist || []).length) {
-    await User.updateOne({ _id: req.user._id }, { $set: { watchlist: cleaned } });
-  }
-  res.json({ watchlist: cleaned });
+  res.json({ watchlist: cleanList(req.user.watchlist) });
 });
 
-// 💾 Save Watchlist (atomic $set — no parallel save() version conflicts)
+// 💾 Save Watchlist (atomic $set, with data-loss protection)
 app.post('/api/watchlist', auth, async (req, res) => {
   const cleaned = cleanList(req.body.watchlist);
-  await User.updateOne({ _id: req.user._id }, { $set: { watchlist: cleaned } });
+  const old = req.user.watchlist || [];
+  // never replace a saved list with an empty one unless the client says it was deliberate
+  if (cleaned.length === 0 && old.length > 0 && !req.body.confirmEmpty) {
+    return res.status(409).json({ error: 'Refusing to replace a saved list with an empty one' });
+  }
+  const set = { watchlist: cleaned };
+  // if a save would remove more than one title, keep the previous list so it can be restored
+  if (old.length - cleaned.length > 1) set.watchlistBackup = cleanList(old);
+  await User.updateOne({ _id: req.user._id }, { $set: set });
   res.json({ success: true, watchlist: cleaned });
 });
 
