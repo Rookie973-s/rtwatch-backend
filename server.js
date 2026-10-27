@@ -9,7 +9,13 @@ const User = require('./models/User');
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
 const PORT = process.env.PORT || 4000;
 const MONGO = process.env.MONGO_URI;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret123';
